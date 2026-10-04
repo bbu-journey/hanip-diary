@@ -1,0 +1,5 @@
+node_modules/
+.env*
+hanip-backup-*.json
+*.log
+_site/

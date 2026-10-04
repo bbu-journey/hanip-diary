@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {cleanRecord,parseJournal,publicJournal,mergeRecords,courses,safeUrl,safePhoto,pageUrl,defaultProfile} from '../core.js';
+const record=(id,extra={})=>cleanRecord({id,name:'장소 '+id,updatedAt:'2026-09-01T00:00:00Z',...extra});
+test('public export excludes every private record and unexpected sensitive fields',()=>{const pub=publicJournal({profile:defaultProfile,records:[{...record('public',{published:true}),token:'secret'},{...record('private'),note:'private-note'}]});assert.equal(pub.records.length,1);assert.equal(pub.records[0].id,'public');assert.ok(!JSON.stringify(pub).includes('secret'));assert.ok(!JSON.stringify(pub).includes('private-note'));});
+test('public is opt-in and a string true does not opt in',()=>{assert.equal(record('1',{published:'true'}).published,false);assert.equal(record('2').published,false);});
+test('malicious links and active image content are rejected',()=>{assert.equal(safeUrl('javascript:alert(1)'), '');assert.equal(safeUrl('data:text/html,hi'), '');assert.equal(safePhoto('data:image/svg+xml;base64,aaaa'),'');assert.equal(safePhoto('https://tracker.invalid/image.png'),'');assert.equal(safeUrl('https://map.naver.com/'),'https://map.naver.com/');});
+test('bad and duplicate backup records fail without partial import',()=>{assert.throws(()=>parseJournal({version:2,records:[]}));assert.throws(()=>parseJournal({version:1,records:[record('a'),record('a')]}));assert.throws(()=>parseJournal({version:1,records:[{id:'x'}]}));});
+test('restore preserves current data and chooses latest duplicate',()=>{const result=mergeRecords([record('a',{note:'new',updatedAt:'2026-10-01T00:00:00Z'}),record('b')],[record('a',{note:'old'}),record('c')]);assert.equal(result.length,3);assert.equal(result.find(r=>r.id==='a').note,'new');});
+test('course order uses day then visit order; unnamed places are not courses',()=>{const grouped=courses([record('c',{trip:'여행',day:2,order:1}),record('b',{trip:'여행',day:1,order:2}),record('a',{trip:'여행',day:1,order:1}),record('d')]);assert.equal(grouped.length,1);assert.deepEqual(grouped[0].stops.map(r=>r.id),['a','b','c']);});
+test('GitHub project and user Pages URLs are correct',()=>{assert.equal(pageUrl('Person/journal'),'https://person.github.io/journal/');assert.equal(pageUrl('Person/person.github.io'),'https://person.github.io/');});
+test('shipped public data is valid and contains no private records',()=>{const raw=JSON.parse(fs.readFileSync(new URL('../public.json',import.meta.url),'utf8'));const parsed=parseJournal(raw);assert.ok(parsed.records.every(r=>r.published===true));assert.ok(raw.records.every(r=>r.published===true));});
